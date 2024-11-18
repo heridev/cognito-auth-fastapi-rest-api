@@ -5,8 +5,15 @@ from .routes import router
 from .config import settings
 import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from .utils.logging_utils import LoggerFactory
+
+LoggerFactory.configure_logging(
+    log_level=logging.INFO,
+    log_file='logs/app.log'
+)
+
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Cognito auth PRO API",
