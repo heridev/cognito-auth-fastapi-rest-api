@@ -28,3 +28,7 @@ source .venv/bin/activate
 pip install python-jose[cryptography]
 pip freeze > requirements.txt
 ```
+## How to deploy to Heroku.com?
+![image](https://github.com/user-attachments/assets/3b282a00-111b-4326-af10-0161a9955c30)
+![image](https://github.com/user-attachments/assets/949934ea-195a-499f-be1e-38f491663cbb)
+
