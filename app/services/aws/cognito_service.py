@@ -1,19 +1,26 @@
 from typing import Optional, Dict, Any
-import boto3
-import jwt
-from jwt.algorithms import RSAAlgorithm
+from jose import jwt, JWTError
 import requests
 from functools import lru_cache
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Security, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import Settings
+from app.utils.logging_utils import with_logger
 
 
+class CustomHTTPBearer(HTTPBearer):
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials:
+        credentials = await super().__call__(request)
+        return credentials
+
+
+@with_logger
 class CognitoService:
     def __init__(self, settings: Settings):
-        self.region = settings.AWS_REGION
-        self.user_pool_id = settings.COGNITO_USER_POOL_ID
-        self.client_id = settings.COGNITO_CLIENT_ID
+        self.region = settings.aws_region
+        self.user_pool_id = settings.cognito_user_pool_id
+        self.client_id = settings.cognito_client_id
+        self.logger.info("Initializing CognitoService")
         self._jwks = None
         security = HTTPBearer()
         self.security = Security(security)
@@ -27,40 +34,40 @@ class CognitoService:
             self._jwks = response.json()
         return self._jwks
 
-    def _get_public_key(self, kid: str) -> Optional[str]:
+    def _get_public_key(self, kid: str) -> Optional[Dict]:
         """Get the public key from JWKS matching the key ID"""
         jwks = self._get_jwks()
-        key_data = next((key for key in jwks['keys'] if key['kid'] == kid), None)
-        if key_data:
-            return RSAAlgorithm.from_jwk(key_data)
-        return None
+        key = next((k for k in jwks['keys'] if k['kid'] == kid), None)
+        return key
 
-    async def validate_token(self, credentials: HTTPAuthorizationCredentials) -> Dict[str, Any]:
+    # async def validate_token(self, credentials: HTTPAuthorizationCredentials) -> Dict[str, Any]:
+    async def validate_token(self, credentials: HTTPAuthorizationCredentials = Security(CustomHTTPBearer())) -> dict:
         """Validate the JWT token and return the claims"""
         try:
+            self.logger.info("we are just getting started")
+            self.logger.info(f"Validating token: {credentials.credentials}")
             token = credentials.credentials
-            # Decode without verification first to get the key ID
-            header = jwt.get_unverified_header(token)
-            kid = header['kid']
+            # Get the header without verification
+            headers = jwt.get_unverified_headers(token)
+            kid = headers['kid']
 
             # Get the public key
             public_key = self._get_public_key(kid)
             if not public_key:
                 raise HTTPException(status_code=401, detail="Invalid token signature")
 
-            # Verify and decode the token
+            # Verify the token
             claims = jwt.decode(
                 token,
-                key=public_key,
+                public_key,
                 algorithms=['RS256'],
                 audience=self.client_id,
                 issuer=f'https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}'
             )
+
             return claims
 
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Token has expired")
-        except jwt.JWTError as e:
+        except JWTError as e:
             raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=401, detail=str(e))
